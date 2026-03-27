@@ -34,9 +34,11 @@ The service expects a Modal secret named `mistral-ocr-auth` containing an `AUTH_
 modal secret create mistral-ocr-auth AUTH_TOKEN=<your-long-random-token>
 ```
 
-### Deploy
+### Deployment Guide
 
-From the project root:
+For deployment-specific instructions, see [`deploy/GUIDE.md`](deploy/GUIDE.md).
+
+If you already have Modal configured, you can deploy from the project root with:
 
 ```bash
 modal deploy deploy/deploy.py
@@ -60,8 +62,10 @@ GET /v1/models
 
 Supported model IDs:
 
-- `liteparse-tesseract-latest`
-- `liteparse-paddleocr-latest`
+- `liteparse-tesseract-latest` - LiteParse OCR backed by in-process Tesseract
+- `liteparse-paddleocr-latest` - LiteParse OCR backed by PaddleOCR
+
+`liteparse-tesseract-latest` is the default model when `model` is omitted or empty.
 
 ### Generate OCR
 
