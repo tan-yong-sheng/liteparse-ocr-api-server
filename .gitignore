@@ -1,0 +1,8 @@
+.env
+.env.*
+
+__pycache__
+.codex/
+
+assets/
+references/

@@ -1,0 +1,11 @@
+{
+  "name": "mistral-ocr-modal-adapter",
+  "version": "1.0.0",
+  "description": "Mistral-compatible OCR endpoint using LiteParse on Modal",
+  "type": "module",
+  "main": "adapter.ts",
+  "dependencies": {
+    "tsx": "^4.0.0",
+    "axios": "^1.7.0"
+  }
+}
