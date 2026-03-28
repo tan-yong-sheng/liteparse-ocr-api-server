@@ -34,6 +34,12 @@ FILES_VOLUME = modal.Volume.from_name("mistral-ocr-files", create_if_missing=Tru
 AUTH_SECRET = modal.Secret.from_name("mistral-ocr-auth")
 MAX_UPLOAD_BYTES = 512 * 1024 * 1024
 CRON_TIMEZONE = "Asia/Kuala_Lumpur"
+try:
+    import multipart  # noqa: F401
+
+    HAS_MULTIPART = True
+except Exception:
+    HAS_MULTIPART = False
 PADDLEOCR_MODEL_NAMES = {
     "liteparse-paddleocr-latest",
 }
@@ -345,63 +351,78 @@ async def require_auth(request: Request, call_next):
 async def healthz():
     return {"ok": True}
 
-@web_app.post("/v1/files")
-async def upload_file(
-    file: UploadFile = File(...),
-    purpose: str = Form("ocr"),
-    expiry: int | None = Form(None),
-    visibility: str = Form("workspace"),
-):
-    FILES_ROOT.mkdir(parents=True, exist_ok=True)
-    file_id = str(uuid.uuid4())
-    file_dir = _file_dir(file_id)
-    file_dir.mkdir(parents=True, exist_ok=True)
-    content_path = _content_path(file_id)
-    hasher = hashlib.sha256()
-    size = 0
+if HAS_MULTIPART:
 
-    try:
-        with content_path.open("wb") as out:
-            while True:
-                chunk = await file.read(1024 * 1024)
-                if not chunk:
-                    break
-                size += len(chunk)
-                if size > MAX_UPLOAD_BYTES:
-                    raise HTTPException(status_code=413, detail="File too large")
-                out.write(chunk)
-                hasher.update(chunk)
+    @web_app.post("/v1/files")
+    async def upload_file(
+        file: UploadFile = File(...),
+        purpose: str = Form("ocr"),
+        expiry: int | None = Form(None),
+        visibility: str = Form("workspace"),
+    ):
+        FILES_ROOT.mkdir(parents=True, exist_ok=True)
+        file_id = str(uuid.uuid4())
+        file_dir = _file_dir(file_id)
+        file_dir.mkdir(parents=True, exist_ok=True)
+        content_path = _content_path(file_id)
+        hasher = hashlib.sha256()
+        size = 0
 
-        created_at = int(time.time())
-        meta = {
-            "id": file_id,
-            "object": "file",
-            "sizeBytes": size,
-            "createdAt": created_at,
-            "filename": file.filename or f"{file_id}.bin",
-            "purpose": purpose or "ocr",
-            "sampleType": "batch_request",
-            "mimetype": file.content_type,
-            "source": "upload",
-            "signature": hasher.hexdigest(),
-            "visibility": visibility,
-            "deleted": False,
-        }
-        if expiry is not None:
-            meta["expiresAt"] = created_at + max(1, expiry) * 3600
+        try:
+            with content_path.open("wb") as out:
+                while True:
+                    chunk = await file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > MAX_UPLOAD_BYTES:
+                        raise HTTPException(status_code=413, detail="File too large")
+                    out.write(chunk)
+                    hasher.update(chunk)
 
-        _write_meta(meta)
-        return _serialize_file_schema(meta)
-    except HTTPException:
-        shutil.rmtree(file_dir, ignore_errors=True)
-        FILES_VOLUME.commit()
-        raise
-    except Exception as exc:
-        shutil.rmtree(file_dir, ignore_errors=True)
-        FILES_VOLUME.commit()
+            created_at = int(time.time())
+            meta = {
+                "id": file_id,
+                "object": "file",
+                "sizeBytes": size,
+                "createdAt": created_at,
+                "filename": file.filename or f"{file_id}.bin",
+                "purpose": purpose or "ocr",
+                "sampleType": "batch_request",
+                "mimetype": file.content_type,
+                "source": "upload",
+                "signature": hasher.hexdigest(),
+                "visibility": visibility,
+                "deleted": False,
+            }
+            if expiry is not None:
+                meta["expiresAt"] = created_at + max(1, expiry) * 3600
+
+            _write_meta(meta)
+            return _serialize_file_schema(meta)
+        except HTTPException:
+            shutil.rmtree(file_dir, ignore_errors=True)
+            FILES_VOLUME.commit()
+            raise
+        except Exception as exc:
+            shutil.rmtree(file_dir, ignore_errors=True)
+            FILES_VOLUME.commit()
+            return Response(
+                content=json.dumps({"error": str(exc)}),
+                status_code=500,
+                media_type="application/json",
+            )
+else:
+
+    @web_app.post("/v1/files")
+    async def upload_file_unavailable():
         return Response(
-            content=json.dumps({"error": str(exc)}),
-            status_code=500,
+            content=json.dumps(
+                {
+                    "error": "File uploads are unavailable because python-multipart is not installed in this runtime.",
+                }
+            ),
+            status_code=503,
             media_type="application/json",
         )
 
